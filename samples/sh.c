@@ -44,8 +44,8 @@ int fork1(void);  // Fork but exits on failure.
 struct cmd *parsecmd(char*);
 
 void dup2_1(int old_fd, int new_fd);
-
 void redirect(struct redircmd *cmd);
+void close1(int);
 
 // Execute cmd.  Never returns.
 void
@@ -68,7 +68,11 @@ runcmd(struct cmd *cmd)
     ecmd = (struct execcmd*)cmd;
     if(ecmd->argv[0] == 0)
       exit(0);
-    execvp(ecmd->argv[0], ecmd->argv);
+    fprintf(stderr, "%s\n", ecmd->argv[0]);
+    if (execvp(ecmd->argv[0], ecmd->argv) < 0)
+    {
+      perror("exec");
+    }
 
     break;
   case '>':
@@ -76,12 +80,32 @@ runcmd(struct cmd *cmd)
     rcmd = (struct redircmd*)cmd;
     redirect(rcmd);
     runcmd(rcmd->cmd);
+
     break;
 
   case '|':
     pcmd = (struct pipecmd*)cmd;
+    int result = pipe(p);
+    if (result == -1) {
+      perror("pipe");
+      exit(-1);
+    }
+    int cpid = fork1();
 
-    fprintf(stderr, "pipe not implemented\n");
+    if (cpid == 0) {
+      dup2_1(p[0], fileno(stdin));
+      close(p[1]);
+      runcmd(pcmd->right);
+      close(p[0]);
+    }
+    else {
+      dup2_1(p[1], fileno(stdout));
+      close(p[0]);
+      runcmd(pcmd->left);
+      close(p[1]);
+      wait(NULL);
+    }
+
     break;
   }
   exit(0);
@@ -315,8 +339,7 @@ redirect(struct redircmd *cmd)
     redirection_fd = open(cmd->file, cmd->mode, S_IRWXU);
   }
   if (redirection_fd < 0) {
-    fprintf(stderr, "failed to open file for redirection: %s\n",\
-                    strerror(errno));
+    perror("redirect");
     exit(-1);
   }
   dup2_1(redirection_fd, cmd->fd);
@@ -327,11 +350,11 @@ dup2_1(int old_fd, int new_fd)
 {
   int result_id = dup2(old_fd, new_fd);
   if (result_id < 0) {
-    fprintf(stderr, "failed to dup file descriptors: %s\n", \
-                    strerror(errno));
+    perror("redirect");
     exit(-1);
   }
 }
+
 
 
 struct cmd*
