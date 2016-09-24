@@ -95,7 +95,7 @@ void pipe_impl(struct cmd *cmd) {
     pipe_cmd = (struct pipecmd *) cmd;
     int fds[2];
     if (pipe(fds) == -1) {
-        fprintf(stderr, "Error on fork: %s\n", strerror(errno));
+        fprintf(stderr, "Error on pipe: %s\n", strerror(errno));
         return;
     }
 
