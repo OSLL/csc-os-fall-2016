@@ -10,6 +10,7 @@
 // Simplifed xv6 shell.
 
 #define MAXARGS 10
+#define MAX 100
 
 // All commands have at least a type. Have looked at the type, the code
 // typically casts the *cmd to some specific cmd type.
@@ -60,16 +61,32 @@ runcmd(struct cmd *cmd)
     ecmd = (struct execcmd*)cmd;
     if(ecmd->argv[0] == 0)
       exit(0);
-    fprintf(stderr, "exec not implemented\n");
-    // Your code here ...
+    char* wholecommand = ecmd->argv[0];
+
+    char command[MAX];
+    int r = 0;
+    for (r = 0; r <= MAX; r++) {
+      command[r] = ' ';
+    }
+
+    int i = 0;
+    while (ecmd->argv[i]) {
+      strcat(command, ecmd->argv[i]);
+      strcat(command, " ");
+      i++;
+    }
+    system(command);
     break;
 
   case '>':
   case '<':
     rcmd = (struct redircmd*)cmd;
-    fprintf(stderr, "redir not implemented\n");
-    // Your code here ...
+    FILE *fp;
+    char *filename = rcmd->file;
+    int file_descriptor = open(filename, rcmd->mode, S_IRWXU);
+    dup2(file_descriptor, STDOUT_FILENO);
     runcmd(rcmd->cmd);
+    close(file_descriptor);
     break;
 
   case '|':
@@ -110,8 +127,9 @@ main(void)
         fprintf(stderr, "cannot cd %s\n", buf+3);
       continue;
     }
-    if(fork1() == 0)
+    if(fork1() == 0) {
       runcmd(parsecmd(buf));
+      }
     wait(&r);
   }
   exit(0);
@@ -330,3 +348,43 @@ parseexec(char **ps, char *es)
   cmd->argv[argc] = 0;
   return ret;
 }
+
+/*
+char* concat(char *s1, char *s2) {
+    //char result[strlen(s1)+strlen(s2)+1];
+    //char* result = malloc(strlen(s1)+strlen(s2)+1);//+1 for the zero-terminator
+    //strcpy(result, s1);
+    //strcat(result, s2);
+char str[80];
+strcpy(str, "these ");
+strcat(str, "strings ");
+strcat(str, "are ");
+strcat(str, "concatenated.");
+    fprintf(stdout, "result is %s", result);
+    return result;
+}
+*/
+
+int getlength(char** argv) {
+    int length = 0;
+    int i = 0;
+    while (argv[i]) {
+      length += strlen(argv[i]) + 1;
+      i++;
+    }
+    return length;
+}
+
+
+void concatenate(char** argv) {
+
+  char str[getlength(argv)];
+  int i = 0;
+  while (argv[i]) {
+    strcat(str, argv[i]);
+    i++;
+  }
+  fprintf(stdout, "res is %s", str);
+}
+
+
