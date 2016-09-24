@@ -14,6 +14,9 @@
 // Simplifed xv6 shell.
 
 #define MAXARGS 10
+#define STDIN_NO 0
+#define STDOUT_NO 1
+#define STDERR_NO 2
 
 // All commands have at least a type. Have looked at the type, the code
 // typically casts the *cmd to some specific cmd type.
@@ -45,7 +48,6 @@ struct cmd *parsecmd(char*);
 
 void dup2_1(int old_fd, int new_fd);
 void redirect(struct redircmd *cmd);
-void close1(int);
 
 // Execute cmd.  Never returns.
 void
@@ -68,7 +70,6 @@ runcmd(struct cmd *cmd)
     ecmd = (struct execcmd*)cmd;
     if(ecmd->argv[0] == 0)
       exit(0);
-    fprintf(stderr, "%s\n", ecmd->argv[0]);
     if (execvp(ecmd->argv[0], ecmd->argv) < 0)
     {
       perror("exec");
@@ -84,28 +85,25 @@ runcmd(struct cmd *cmd)
     break;
 
   case '|':
-    pcmd = (struct pipecmd*)cmd;
-    int result = pipe(p);
-    if (result == -1) {
-      perror("pipe");
-      exit(-1);
+    pcmd = (struct pipecmd *) cmd;
+    if (pipe(p) == -1) {
+        perror("pipe");
+        exit(-1);
     }
-    int cpid = fork1();
 
+    int cpid = fork1();
     if (cpid == 0) {
-      dup2_1(p[0], fileno(stdin));
-      close(p[1]);
-      runcmd(pcmd->right);
-      close(p[0]);
+        close(p[0]);
+        dup2_1(p[1], fileno(stdout));
+        close(p[1]);
+        runcmd(pcmd->left);
     }
     else {
-      dup2_1(p[1], fileno(stdout));
-      close(p[0]);
-      runcmd(pcmd->left);
       close(p[1]);
-      wait(NULL);
+      dup2_1(p[0], fileno(stdin));
+      close(p[0]);
+      runcmd(pcmd->right);
     }
-
     break;
   }
   exit(0);
