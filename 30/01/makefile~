@@ -1,0 +1,5 @@
+build: sh
+	gcc sh.c -o sh
+
+clean:
+	rm -rf *.o sh
