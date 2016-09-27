@@ -60,24 +60,55 @@ runcmd(struct cmd *cmd)
     ecmd = (struct execcmd*)cmd;
     if(ecmd->argv[0] == 0)
       exit(0);
-    fprintf(stderr, "exec not implemented\n");
-    // Your code here ...
+//  fprintf(stderr, "exec not implemented\n");
+    if (execvp(ecmd->argv[0], ecmd->argv) < 0) {
+		perror("Execution went wrong");
+    }
     break;
 
   case '>':
   case '<':
     rcmd = (struct redircmd*)cmd;
-    fprintf(stderr, "redir not implemented\n");
-    // Your code here ...
+//  fprintf(stderr, "redir not implemented\n");
+    int fs = open(rcmd->file, rcmd->mode, S_IRWXU);
+	if (fs < 0) {
+    	perror("File opening went wrong");
+    	break;
+	}
+    if (dup2(fs, rcmd->fd)  < 0) {
+    	perror("Duplication went wrong");
+    	break;
+    }
     runcmd(rcmd->cmd);
+    close(fs);
     break;
 
-  case '|':
+case '|':
     pcmd = (struct pipecmd*)cmd;
-    fprintf(stderr, "pipe not implemented\n");
-    // Your code here ...
-    break;
-  }    
+//  fprintf(stderr, "pipe not implemented\n");
+    if (pipe(p) < 0) {
+    	perror("Pipe creation went wrong");
+    };
+    if (fork1() == 0) {
+		if (dup2(p[0], fileno(stdin)) < 0){ 
+			perror("Descriptor duplication went wrong"); 
+			break; 
+		} 
+		close(p[1]);
+		runcmd(pcmd->right);
+		close(p[0]);
+	} 
+	else {
+		if (dup2(p[1], fileno(stdout)) < 0){ 
+			perror("Descriptor duplication went wrong"); 
+			break; 
+		} 
+		close(p[0]);
+		runcmd(pcmd->left);
+		close(p[1]);
+	}
+	break;
+	}
   exit(0);
 }
 
