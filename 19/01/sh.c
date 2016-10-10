@@ -4,12 +4,19 @@
 #include <fcntl.h>
 #include <string.h>
 #include <assert.h>
+#include <sys/wait.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <errno.h>
+#include <dirent.h>
+
 
 // Simplifed xv6 shell.
 
 #define MAXARGS 10
+#define STDIN_NO 0
+#define STDOUT_NO 1
+#define STDERR_NO 2
 
 // All commands have at least a type. Have looked at the type, the code
 // typically casts the *cmd to some specific cmd type.
@@ -23,7 +30,7 @@ struct execcmd {
 };
 
 struct redircmd {
-  int type;          // < or > 
+  int type;          // < or >
   struct cmd *cmd;   // the command to be run (e.g., an execcmd)
   char *file;        // the input/output file
   int mode;          // the mode to open the file with
@@ -39,6 +46,9 @@ struct pipecmd {
 int fork1(void);  // Fork but exits on failure.
 struct cmd *parsecmd(char*);
 
+void dup2_1(int old_fd, int new_fd);
+void redirect(struct redircmd *cmd);
+
 // Execute cmd.  Never returns.
 void
 runcmd(struct cmd *cmd)
@@ -50,7 +60,7 @@ runcmd(struct cmd *cmd)
 
   if(cmd == 0)
     exit(0);
-  
+
   switch(cmd->type){
   default:
     fprintf(stderr, "unknown runcmd\n");
@@ -60,31 +70,49 @@ runcmd(struct cmd *cmd)
     ecmd = (struct execcmd*)cmd;
     if(ecmd->argv[0] == 0)
       exit(0);
-    fprintf(stderr, "exec not implemented\n");
-    // Your code here ...
-    break;
+    if (execvp(ecmd->argv[0], ecmd->argv) < 0)
+    {
+      perror("exec");
+    }
 
+    break;
   case '>':
   case '<':
     rcmd = (struct redircmd*)cmd;
-    fprintf(stderr, "redir not implemented\n");
-    // Your code here ...
+    redirect(rcmd);
     runcmd(rcmd->cmd);
+
     break;
 
   case '|':
-    pcmd = (struct pipecmd*)cmd;
-    fprintf(stderr, "pipe not implemented\n");
-    // Your code here ...
+    pcmd = (struct pipecmd *) cmd;
+    if (pipe(p) == -1) {
+        perror("pipe");
+        exit(-1);
+    }
+
+    int cpid = fork1();
+    if (cpid == 0) {
+        close(p[0]);
+        dup2_1(p[1], fileno(stdout));
+        close(p[1]);
+        runcmd(pcmd->left);
+    }
+    else {
+      close(p[1]);
+      dup2_1(p[0], fileno(stdin));
+      close(p[0]);
+      runcmd(pcmd->right);
+    }
     break;
-  }    
+  }
   exit(0);
 }
 
 int
 getcmd(char *buf, int nbuf)
 {
-  
+
   if (isatty(fileno(stdin)))
     fprintf(stdout, "$ ");
   memset(buf, 0, nbuf);
@@ -121,7 +149,7 @@ int
 fork1(void)
 {
   int pid;
-  
+
   pid = fork();
   if(pid == -1)
     perror("fork");
@@ -177,7 +205,7 @@ gettoken(char **ps, char *es, char **q, char **eq)
 {
   char *s;
   int ret;
-  
+
   s = *ps;
   while(s < es && strchr(whitespace, *s))
     s++;
@@ -202,7 +230,7 @@ gettoken(char **ps, char *es, char **q, char **eq)
   }
   if(eq)
     *eq = s;
-  
+
   while(s < es && strchr(whitespace, *s))
     s++;
   *ps = s;
@@ -213,7 +241,7 @@ int
 peek(char **ps, char *es, char *toks)
 {
   char *s;
-  
+
   s = *ps;
   while(s < es && strchr(whitespace, *s))
     s++;
@@ -227,7 +255,7 @@ struct cmd *parseexec(char**, char*);
 
 // make a copy of the characters in the input buffer, starting from s through es.
 // null-terminate the copy to make it a string.
-char 
+char
 *mkcopy(char *s, char *es)
 {
   int n = es - s;
@@ -299,6 +327,34 @@ parseredirs(struct cmd *cmd, char **ps, char *es)
   return cmd;
 }
 
+void
+redirect(struct redircmd *cmd)
+{
+  int redirection_fd = 0;
+  if (cmd->type == '<') {
+    redirection_fd = open(cmd->file, cmd->mode);
+  } else {
+    redirection_fd = open(cmd->file, cmd->mode, S_IRWXU);
+  }
+  if (redirection_fd < 0) {
+    perror("redirect");
+    exit(-1);
+  }
+  dup2_1(redirection_fd, cmd->fd);
+}
+
+void
+dup2_1(int old_fd, int new_fd)
+{
+  int result_id = dup2(old_fd, new_fd);
+  if (result_id < 0) {
+    perror("redirect");
+    exit(-1);
+  }
+}
+
+
+
 struct cmd*
 parseexec(char **ps, char *es)
 {
@@ -306,7 +362,7 @@ parseexec(char **ps, char *es)
   int tok, argc;
   struct execcmd *cmd;
   struct cmd *ret;
-  
+
   ret = execcmd();
   cmd = (struct execcmd*)ret;
 
@@ -330,5 +386,3 @@ parseexec(char **ps, char *es)
   cmd->argv[argc] = 0;
   return ret;
 }
-
-
