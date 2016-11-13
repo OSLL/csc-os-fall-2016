@@ -11,8 +11,8 @@
 
 
 _start:
-  cli
-  movw   $msg, %si
+    cli
+    movw   $msg, %si
 
 print_char:
     lodsb
