@@ -7,7 +7,7 @@ main()
 {
   printf(1, "%s\n", "GDT:");
   struct segdesc gdt;
-  user(gdt);
+  user(&gdt);
 
   printf(1, "%s", "Low bits of segment limit: ");
   printf(1, "%d\n", gdt.lim_15_0);
