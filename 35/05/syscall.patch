@@ -1,0 +1,101 @@
+Common subdirectories: sandbox/xv6-public/.git and xv6-public/.git
+diff -u sandbox/xv6-public/Makefile xv6-public/Makefile
+--- sandbox/xv6-public/Makefile	2016-12-12 14:17:35.000000000 +0300
++++ xv6-public/Makefile	2016-12-11 21:51:46.000000000 +0300
+@@ -161,6 +161,7 @@
+ 	_cat\
+ 	_echo\
+ 	_forktest\
++	_gdtinfo\
+ 	_grep\
+ 	_init\
+ 	_kill\
+@@ -174,6 +175,7 @@
+ 	_wc\
+ 	_zombie\
+ 
++
+ fs.img: mkfs README $(UPROGS)
+ 	./mkfs fs.img README $(UPROGS)
+ 
+@@ -242,7 +244,7 @@
+ EXTRA=\
+ 	mkfs.c ulib.c user.h cat.c echo.c forktest.c grep.c kill.c\
+ 	ln.c ls.c mkdir.c rm.c stressfs.c usertests.c wc.c zombie.c\
+-	printf.c umalloc.c\
++	printf.c umalloc.c gdtinfo.c\
+ 	README dot-bochsrc *.pl toc.* runoff runoff1 runoff.list\
+ 	.gdbinit.tmpl gdbutil\
+ 
+Only in xv6-public/: gdtinfo.c
+diff -u sandbox/xv6-public/syscall.c xv6-public/syscall.c
+--- sandbox/xv6-public/syscall.c	2016-12-12 14:17:35.000000000 +0300
++++ xv6-public/syscall.c	2016-12-11 18:51:09.000000000 +0300
+@@ -98,6 +98,7 @@
+ extern int sys_wait(void);
+ extern int sys_write(void);
+ extern int sys_uptime(void);
++extern int sys_user(void);
+ 
+ static int (*syscalls[])(void) = {
+ [SYS_fork]    sys_fork,
+@@ -121,6 +122,7 @@
+ [SYS_link]    sys_link,
+ [SYS_mkdir]   sys_mkdir,
+ [SYS_close]   sys_close,
++[SYS_user]    sys_user,
+ };
+ 
+ void
+diff -u sandbox/xv6-public/syscall.h xv6-public/syscall.h
+--- sandbox/xv6-public/syscall.h	2016-12-12 14:17:35.000000000 +0300
++++ xv6-public/syscall.h	2016-12-11 18:50:32.000000000 +0300
+@@ -20,3 +20,4 @@
+ #define SYS_link   19
+ #define SYS_mkdir  20
+ #define SYS_close  21
++#define SYS_user   22
+\ No newline at end of file
+diff -u sandbox/xv6-public/sysproc.c xv6-public/sysproc.c
+--- sandbox/xv6-public/sysproc.c	2016-12-12 14:17:35.000000000 +0300
++++ xv6-public/sysproc.c	2016-12-11 23:15:26.000000000 +0300
+@@ -89,3 +89,13 @@
+   release(&tickslock);
+   return xticks;
+ }
++
++int
++sys_user(void)
++{
++  struct segdesc *gdt;
++  if(argptr(0, (void*)&gdt, sizeof(*gdt)) < 0)
++    return -1;
++  *gdt = cpu->gdt[1];
++  return 0;
++}
+diff -u sandbox/xv6-public/user.h xv6-public/user.h
+--- sandbox/xv6-public/user.h	2016-12-12 14:17:35.000000000 +0300
++++ xv6-public/user.h	2016-12-11 22:11:39.000000000 +0300
+@@ -1,3 +1,5 @@
++#include "mmu.h"
++
+ struct stat;
+ struct rtcdate;
+ 
+@@ -23,6 +25,7 @@
+ char* sbrk(int);
+ int sleep(int);
+ int uptime(void);
++int user(struct segdesc*);
+ 
+ // ulib.c
+ int stat(char*, struct stat*);
+diff -u sandbox/xv6-public/usys.S xv6-public/usys.S
+--- sandbox/xv6-public/usys.S	2016-12-12 14:17:35.000000000 +0300
++++ xv6-public/usys.S	2016-12-11 18:48:50.000000000 +0300
+@@ -29,3 +29,4 @@
+ SYSCALL(sbrk)
+ SYSCALL(sleep)
+ SYSCALL(uptime)
++SYSCALL(user)
+\ No newline at end of file
