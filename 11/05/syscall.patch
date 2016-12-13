@@ -1,0 +1,134 @@
+diff --git a/Makefile b/Makefile
+index 93d525a..d3c7e60 100644
+--- a/Makefile
++++ b/Makefile
+@@ -167,6 +167,7 @@ UPROGS=\
+ 	_ln\
+ 	_ls\
+ 	_mkdir\
++	_gdtinfo\
+ 	_rm\
+ 	_sh\
+ 	_stressfs\
+@@ -242,7 +243,7 @@ qemu-nox-gdb: fs.img xv6.img .gdbinit
+ EXTRA=\
+ 	mkfs.c ulib.c user.h cat.c echo.c forktest.c grep.c kill.c\
+ 	ln.c ls.c mkdir.c rm.c stressfs.c usertests.c wc.c zombie.c\
+-	printf.c umalloc.c\
++	printf.c umalloc.c gdtinfo.c\
+ 	README dot-bochsrc *.pl toc.* runoff runoff1 runoff.list\
+ 	.gdbinit.tmpl gdbutil\
+ 
+diff --git a/gdtinfo.c b/gdtinfo.c
+new file mode 100644
+index 0000000..17e2fcb
+--- /dev/null
++++ b/gdtinfo.c
+@@ -0,0 +1,29 @@
++#include "types.h"
++#include "mmu.h"
++#include "user.h"
++
++int main()
++{
++	struct segdesc* gdt;
++	user(&gdt);
++	printf(1, "GDT\n");
++	for (int i = 1; i < NSEGS; ++i) {
++		printf(1, "Segment = %d\n", i);
++		// Segment Descriptor description from mmu.h
++		printf(1, "Low bits of segment limit = %d\n", gdt[i].lim_15_0);
++		printf(1, "Low bits of segment base address = %d\n", gdt[i].base_15_0);
++		printf(1, "Middle bits of segment base address = %d\n", gdt[i].base_23_16);
++		printf(1, "Segment type = %d\n", gdt[i].type);
++		printf(1, "s (0 = system, 1 = application) = %d\n", gdt[i].s);
++		printf(1, "Descriptor Privilege Level = %d\n", gdt[i].dpl);
++		printf(1, "Present = %d\n", gdt[i].p);
++		printf(1, "High bits of segment limit = %d\n", gdt[i].lim_19_16);
++		printf(1, "Unused (available for software use) = %d\n", gdt[i].avl);
++		printf(1, "Reserved = %d\n", gdt[i].rsv1);
++		printf(1, "db (0 = 16-bit segment, 1 = 32-bit segment) = %d\n", gdt[i].db);
++		printf(1, "Granularity: limit scaled by 4K when set = %d\n", gdt[i].g);
++		printf(1, "High bits of segment base address = %d\n\n", gdt[i].base_31_24);
++	}
++
++	return 0;
++}
+\ No newline at end of file
+diff --git a/syscall.c b/syscall.c
+index 9ae7536..698e6ec 100644
+--- a/syscall.c
++++ b/syscall.c
+@@ -98,6 +98,7 @@ extern int sys_unlink(void);
+ extern int sys_wait(void);
+ extern int sys_write(void);
+ extern int sys_uptime(void);
++extern int sys_user(void);
+ 
+ static int (*syscalls[])(void) = {
+ [SYS_fork]    sys_fork,
+@@ -121,6 +122,7 @@ static int (*syscalls[])(void) = {
+ [SYS_link]    sys_link,
+ [SYS_mkdir]   sys_mkdir,
+ [SYS_close]   sys_close,
++[SYS_user]    sys_user,
+ };
+ 
+ void
+diff --git a/syscall.h b/syscall.h
+index bc5f356..5e5e658 100644
+--- a/syscall.h
++++ b/syscall.h
+@@ -20,3 +20,4 @@
+ #define SYS_link   19
+ #define SYS_mkdir  20
+ #define SYS_close  21
++#define SYS_user   22
+diff --git a/sysproc.c b/sysproc.c
+index 6b585e0..0e6e99a 100644
+--- a/sysproc.c
++++ b/sysproc.c
+@@ -89,3 +89,15 @@ sys_uptime(void)
+   release(&tickslock);
+   return xticks;
+ }
++
++
++int
++sys_user(void)
++{
++	struct segdesc* gdt;
++	if (argptr(0, (char**)&gdt, sizeof(gdt)) < 0) {
++		return -1;
++	}
++	gdt = cpu->gdt;
++	return 0;
++}
+diff --git a/user.h b/user.h
+index f45b8d5..e6c54e8 100644
+--- a/user.h
++++ b/user.h
+@@ -1,5 +1,6 @@
+ struct stat;
+ struct rtcdate;
++struct segdesc;
+ 
+ // system calls
+ int fork(void);
+@@ -23,6 +24,7 @@ int getpid(void);
+ char* sbrk(int);
+ int sleep(int);
+ int uptime(void);
++int user(struct segdesc**);
+ 
+ // ulib.c
+ int stat(char*, struct stat*);
+diff --git a/usys.S b/usys.S
+index 8bfd8a1..0cb192a 100644
+--- a/usys.S
++++ b/usys.S
+@@ -29,3 +29,4 @@ SYSCALL(getpid)
+ SYSCALL(sbrk)
+ SYSCALL(sleep)
+ SYSCALL(uptime)
++SYSCALL(user)
