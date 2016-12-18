@@ -1,0 +1,170 @@
+From 4c85eff4a72289fe8b77461e5b5b2d473ccb24e4 Mon Sep 17 00:00:00 2001
+From: abduqodir <a.qurbonzoda@gmail.com>
+Date: Mon, 19 Dec 2016 02:23:02 +0300
+Subject: [PATCH] own syscall
+
+---
+ Makefile  |  3 ++-
+ gdtinfo.c | 40 ++++++++++++++++++++++++++++++++++++++++
+ syscall.c |  2 ++
+ syscall.h |  1 +
+ sysproc.c | 17 +++++++++++++++++
+ user.h    |  2 ++
+ usys.S    |  1 +
+ 7 files changed, 65 insertions(+), 1 deletion(-)
+ create mode 100644 gdtinfo.c
+
+diff --git a/Makefile b/Makefile
+index 93d525a..9ed4ac5 100644
+--- a/Makefile
++++ b/Makefile
+@@ -173,6 +173,7 @@ UPROGS=\
+ 	_usertests\
+ 	_wc\
+ 	_zombie\
++	_gdtinfo\
+ 
+ fs.img: mkfs README $(UPROGS)
+ 	./mkfs fs.img README $(UPROGS)
+@@ -242,7 +243,7 @@ qemu-nox-gdb: fs.img xv6.img .gdbinit
+ EXTRA=\
+ 	mkfs.c ulib.c user.h cat.c echo.c forktest.c grep.c kill.c\
+ 	ln.c ls.c mkdir.c rm.c stressfs.c usertests.c wc.c zombie.c\
+-	printf.c umalloc.c\
++	printf.c umalloc.c gdtinfo.c\
+ 	README dot-bochsrc *.pl toc.* runoff runoff1 runoff.list\
+ 	.gdbinit.tmpl gdbutil\
+ 
+diff --git a/gdtinfo.c b/gdtinfo.c
+new file mode 100644
+index 0000000..a08cf74
+--- /dev/null
++++ b/gdtinfo.c
+@@ -0,0 +1,40 @@
++#include "types.h"
++#include "mmu.h"
++#include "user.h"
++
++
++void print_desc(struct segdesc segment) 
++{
++	printf(1, "Segment Description\n");
++	printf(1, "Low bits of segment limit: %d\n", segment.lim_15_0);
++	printf(1, "Low bits of segment base address: %d\n", segment.base_15_0);
++	printf(1, "Middle bits of segment base address: %d\n", segment.base_23_16);
++	printf(1, "Segment type (see STS_ constants): %d\n", segment.type);
++	printf(1, "%s segment\n", segment.s == 0 ? "System" : "Application");
++	printf(1, "Descriptor Privilege Level: %d\n", segment.dpl);
++	printf(1, "Present flag: %d\n", segment.p);
++	printf(1, "High bits of segment limit: %d\n", segment.lim_19_16);
++	printf(1, "Unused (available for software use): %d\n", segment.avl);
++	printf(1, "Reserved flag: %d\n", segment.rsv1);
++	printf(1, "%d-bit segment\n", segment.db == 0 ? 16 : 32);
++	printf(1, "Granularity: limit is %s scaled by 4K\n", segment.g == 0 ? "not" : "");
++	printf(1, "High bits of segment base address: %d\n", segment.base_31_24);
++}
++
++int main()
++{
++	struct segdesc gdt[NSEGS];
++
++	if (user(gdt)) 
++		exit();
++
++	int i;
++	for (i = 0; i < NSEGS; i++)
++	{
++		printf(1, "Segment %d\n", i);
++		print_desc(gdt[i]);
++		printf(1, "\n\t\t\t***\n\n");
++	}
++
++	exit();
++}
+\ No newline at end of file
+diff --git a/syscall.c b/syscall.c
+index 9ae7536..698e6ec 100644
+--- a/syscall.c
++++ b/syscall.c
+@@ -98,6 +98,7 @@ extern int sys_unlink(void);
+ extern int sys_wait(void);
+ extern int sys_write(void);
+ extern int sys_uptime(void);
++extern int sys_user(void);
+ 
+ static int (*syscalls[])(void) = {
+ [SYS_fork]    sys_fork,
+@@ -121,6 +122,7 @@ static int (*syscalls[])(void) = {
+ [SYS_link]    sys_link,
+ [SYS_mkdir]   sys_mkdir,
+ [SYS_close]   sys_close,
++[SYS_user]    sys_user,
+ };
+ 
+ void
+diff --git a/syscall.h b/syscall.h
+index bc5f356..f8fd1d2 100644
+--- a/syscall.h
++++ b/syscall.h
+@@ -20,3 +20,4 @@
+ #define SYS_link   19
+ #define SYS_mkdir  20
+ #define SYS_close  21
++#define SYS_user   22
+\ No newline at end of file
+diff --git a/sysproc.c b/sysproc.c
+index 6b585e0..22b69a2 100644
+--- a/sysproc.c
++++ b/sysproc.c
+@@ -89,3 +89,20 @@ sys_uptime(void)
+   release(&tickslock);
+   return xticks;
+ }
++
++int
++sys_user(void) 
++{
++  struct segdesc *gdt;
++  
++  if (argptr(0, (void*)&gdt, sizeof(gdt[0]) * NSEGS) < 0)
++    return -1;
++
++  int i = 0;
++  for (i = 0; i < NSEGS; i++)
++  {
++    gdt[i] = cpus[0].gdt[i];
++  }
++
++  return 0;
++}
+diff --git a/user.h b/user.h
+index f45b8d5..9e82fb5 100644
+--- a/user.h
++++ b/user.h
+@@ -1,5 +1,6 @@
+ struct stat;
+ struct rtcdate;
++struct segdesc;
+ 
+ // system calls
+ int fork(void);
+@@ -23,6 +24,7 @@ int getpid(void);
+ char* sbrk(int);
+ int sleep(int);
+ int uptime(void);
++int user(struct segdesc*);
+ 
+ // ulib.c
+ int stat(char*, struct stat*);
+diff --git a/usys.S b/usys.S
+index 8bfd8a1..0cb192a 100644
+--- a/usys.S
++++ b/usys.S
+@@ -29,3 +29,4 @@ SYSCALL(getpid)
+ SYSCALL(sbrk)
+ SYSCALL(sleep)
+ SYSCALL(uptime)
++SYSCALL(user)
+-- 
+2.7.4
+
