@@ -7,21 +7,26 @@
   msg:
     .asciz  "Hello world!"
 
-  .global _start
-
+.global _start
 
 _start:
     cli
     movw   $msg, %si
+    movw   $0xB800, %bx
+    movw   %bx, %es
+    movw   $0x0, %di
+    movb   $0x07, %ah # white
 
 print_char:
     lodsb
     cmpb   $0x0, %al
-    je     loop
-    movb   $0x0E, %ah
-    int    $0x10
+    je     cleanup
+    stosw
     jmp    print_char
 
-loop:
-    jmp loop
+cleanup:
+    mov    $0x500, %cx
+    movw   $0x20, %ax
+    movw   %bx, %es
+    rep    stosw
 
