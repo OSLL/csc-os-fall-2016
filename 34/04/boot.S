@@ -9,10 +9,16 @@ _start:
 
 .writeStringIn:
 	lodsb
+
 	orb  %al, %al
 	jz   .writeStringOut
-	movb $0x0e, %ah
-	int  $0x10
+
+	movw   %cx, %sp
+
+  	and    $0x00FF, %ax
+  	or     $0x5F00, %ax
+  	push   %ax
+  	add    $0x2, %cx
 	jmp  .writeStringIn
 
 .writeStringOut:
