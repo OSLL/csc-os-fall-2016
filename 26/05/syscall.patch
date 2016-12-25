@@ -1,0 +1,157 @@
+diff -c -N xv6-public/gdtinfo.c xv6-user/gdtinfo.c
+*** xv6-public/gdtinfo.c	1970-01-01 03:00:00.000000000 +0300
+--- xv6-user/gdtinfo.c	2016-12-15 00:22:21.738062997 +0300
+***************
+*** 0 ****
+--- 1,35 ----
++ #include "types.h"
++ #include "mmu.h"
++ #include "user.h"
++    
++ void format_sd(struct segdesc* sd)
++ {
++ 
++   printf(1, "\n  Segment Limit: 0x%x", (sd->lim_15_0 + (sd->lim_19_16 << 16)));
++   if (sd->g == 1)
++     printf(1, "000");
++   printf(1, "\n  Base address : 0x%x", sd->base_15_0 + (sd->base_23_16 << 16) + (sd->base_31_24 << 24));
++   printf(1, "\n  Segment type : %d", sd->type);
++   printf(1, "\n  Application  : %d", sd->s);
++   printf(1, "\n  DPL          : %d", sd->dpl);
++   printf(1, "\n  Present      : %d", sd->p);
++   printf(1, "\n  AVL          : %d", sd->avl);
++   printf(1, "\n  32bit segment: %d", sd->db);
++ }
++  
++ int
++ main()
++ {
++   struct segdesc gdt[NSEGS];
++   int i;
++   user(gdt);
++   for (i = 1; i < NSEGS; ++i)
++   {
++     struct segdesc sd = gdt[i];
++     printf(1, "\nSegment Descriptor #%d", i);
++     format_sd(&sd);
++   }
++   return 0;
++ }
++ 
++ 
+Common subdirectories: xv6-public/.git and xv6-user/.git
+diff -c -N xv6-public/Makefile xv6-user/Makefile
+*** xv6-public/Makefile	2016-10-04 20:10:42.000000000 +0300
+--- xv6-user/Makefile	2016-12-13 01:20:54.000000000 +0300
+***************
+*** 173,178 ****
+--- 173,179 ----
+  	_usertests\
+  	_wc\
+  	_zombie\
++ 	_gdtinfo\
+  
+  fs.img: mkfs README $(UPROGS)
+  	./mkfs fs.img README $(UPROGS)
+***************
+*** 242,248 ****
+  EXTRA=\
+  	mkfs.c ulib.c user.h cat.c echo.c forktest.c grep.c kill.c\
+  	ln.c ls.c mkdir.c rm.c stressfs.c usertests.c wc.c zombie.c\
+! 	printf.c umalloc.c\
+  	README dot-bochsrc *.pl toc.* runoff runoff1 runoff.list\
+  	.gdbinit.tmpl gdbutil\
+  
+--- 243,249 ----
+  EXTRA=\
+  	mkfs.c ulib.c user.h cat.c echo.c forktest.c grep.c kill.c\
+  	ln.c ls.c mkdir.c rm.c stressfs.c usertests.c wc.c zombie.c\
+! 	printf.c umalloc.c gdtinfo.c\
+  	README dot-bochsrc *.pl toc.* runoff runoff1 runoff.list\
+  	.gdbinit.tmpl gdbutil\
+  
+diff -c -N xv6-public/syscall.c xv6-user/syscall.c
+*** xv6-public/syscall.c	2016-10-04 20:10:42.000000000 +0300
+--- xv6-user/syscall.c	2016-12-12 23:50:51.000000000 +0300
+***************
+*** 98,103 ****
+--- 98,104 ----
+  extern int sys_wait(void);
+  extern int sys_write(void);
+  extern int sys_uptime(void);
++ extern int sys_user(void);
+  
+  static int (*syscalls[])(void) = {
+  [SYS_fork]    sys_fork,
+***************
+*** 121,126 ****
+--- 122,128 ----
+  [SYS_link]    sys_link,
+  [SYS_mkdir]   sys_mkdir,
+  [SYS_close]   sys_close,
++ [SYS_user]    sys_user,
+  };
+  
+  void
+diff -c -N xv6-public/syscall.h xv6-user/syscall.h
+*** xv6-public/syscall.h	2016-10-04 20:10:42.000000000 +0300
+--- xv6-user/syscall.h	2016-12-12 23:47:20.000000000 +0300
+***************
+*** 20,22 ****
+--- 20,23 ----
+  #define SYS_link   19
+  #define SYS_mkdir  20
+  #define SYS_close  21
++ #define SYS_user   22
+diff -c -N xv6-public/sysproc.c xv6-user/sysproc.c
+*** xv6-public/sysproc.c	2016-10-04 20:10:42.000000000 +0300
+--- xv6-user/sysproc.c	2016-12-13 00:37:49.000000000 +0300
+***************
+*** 89,91 ****
+--- 89,102 ----
+    release(&tickslock);
+    return xticks;
+  }
++ 
++ int
++ sys_user(void)
++ {
++   struct segdesc *user_space_gdt;
++   if (argptr(0, (void*)&user_space_gdt, sizeof(*user_space_gdt)) < 0)
++     return -1;
++   
++   memmove(user_space_gdt, cpu->gdt, sizeof(cpu->gdt));
++   return 0;
++ }
+diff -c -N xv6-public/user.h xv6-user/user.h
+*** xv6-public/user.h	2016-10-04 20:10:42.000000000 +0300
+--- xv6-user/user.h	2016-12-13 00:44:36.000000000 +0300
+***************
+*** 1,5 ****
+--- 1,6 ----
+  struct stat;
+  struct rtcdate;
++ struct segdesc;
+  
+  // system calls
+  int fork(void);
+***************
+*** 23,28 ****
+--- 24,30 ----
+  char* sbrk(int);
+  int sleep(int);
+  int uptime(void);
++ int user(struct segdesc*);
+  
+  // ulib.c
+  int stat(char*, struct stat*);
+diff -c -N xv6-public/usys.S xv6-user/usys.S
+*** xv6-public/usys.S	2016-10-04 20:10:42.000000000 +0300
+--- xv6-user/usys.S	2016-12-12 23:48:21.000000000 +0300
+***************
+*** 29,31 ****
+--- 29,32 ----
+  SYSCALL(sbrk)
+  SYSCALL(sleep)
+  SYSCALL(uptime)
++ SYSCALL(user)
