@@ -1,0 +1,127 @@
+diff --git a/Makefile b/Makefile
+index 93d525a..80be547 100644
+--- a/Makefile
++++ b/Makefile
+@@ -173,6 +173,7 @@ UPROGS=\
+ 	_usertests\
+ 	_wc\
+ 	_zombie\
++	_gdtinfo\
+ 
+ fs.img: mkfs README $(UPROGS)
+ 	./mkfs fs.img README $(UPROGS)
+@@ -242,7 +243,7 @@ qemu-nox-gdb: fs.img xv6.img .gdbinit
+ EXTRA=\
+ 	mkfs.c ulib.c user.h cat.c echo.c forktest.c grep.c kill.c\
+ 	ln.c ls.c mkdir.c rm.c stressfs.c usertests.c wc.c zombie.c\
+-	printf.c umalloc.c\
++	printf.c umalloc.c gdt.c\
+ 	README dot-bochsrc *.pl toc.* runoff runoff1 runoff.list\
+ 	.gdbinit.tmpl gdbutil\
+ 
+diff --git a/gdtinfo.c b/gdtinfo.c
+new file mode 100644
+index 0000000..3b9af8a
+--- /dev/null
++++ b/gdtinfo.c
+@@ -0,0 +1,23 @@
++#include "types.h"
++#include "stat.h"
++#include "user.h"
++#include "mmu.h"
++
++int main()
++{
++  struct segdesc gdt;
++  user(&gdt);
++  printf(1, "Global Descriptor Table:\n");
++  printf(1, "------------------------\n");
++  printf(1, "Limit   | 0x%x 0x%x\n", gdt.lim_15_0, gdt.lim_19_16);
++  printf(1, "Base    | 0x%x 0x%x 0x%x\n", gdt.base_15_0, gdt.base_23_16, gdt.base_31_24);
++  printf(1, "Type    | 0x%x\n", gdt.type);
++  printf(1, "Sys/app | %x\n", gdt.s);
++  printf(1, "Priv    | %x\n", gdt.dpl);
++  printf(1, "Present | %x\n", gdt.p);
++  printf(1, "Unused  | %x\n", gdt.avl);
++  printf(1, "Reserved| %x\n", gdt.rsv1);
++  printf(1, "16/32bit| %x\n", gdt.db);
++  printf(1, "Granular| %x\n", gdt.g);
++  exit();
++}
+diff --git a/syscall.c b/syscall.c
+index 9ae7536..698e6ec 100644
+--- a/syscall.c
++++ b/syscall.c
+@@ -98,6 +98,7 @@ extern int sys_unlink(void);
+ extern int sys_wait(void);
+ extern int sys_write(void);
+ extern int sys_uptime(void);
++extern int sys_user(void);
+ 
+ static int (*syscalls[])(void) = {
+ [SYS_fork]    sys_fork,
+@@ -121,6 +122,7 @@ static int (*syscalls[])(void) = {
+ [SYS_link]    sys_link,
+ [SYS_mkdir]   sys_mkdir,
+ [SYS_close]   sys_close,
++[SYS_user]    sys_user,
+ };
+ 
+ void
+diff --git a/syscall.h b/syscall.h
+index bc5f356..e472ec9 100644
+--- a/syscall.h
++++ b/syscall.h
+@@ -20,3 +20,4 @@
+ #define SYS_link   19
+ #define SYS_mkdir  20
+ #define SYS_close  21
++#define SYS_user    22
+diff --git a/sysproc.c b/sysproc.c
+index 6b585e0..3837d61 100644
+--- a/sysproc.c
++++ b/sysproc.c
+@@ -89,3 +89,14 @@ sys_uptime(void)
+   release(&tickslock);
+   return xticks;
+ }
++
++int sys_user(void)
++{
++  struct segdesc *gdt_ptr;
++  if (argptr(0, (char**)&gdt_ptr, sizeof(*gdt_ptr)) < 0)
++  {
++    return -1;
++  }
++  *gdt_ptr = cpu->gdt[1];
++  return 0;
++}
+\ No newline at end of file
+diff --git a/user.h b/user.h
+index f45b8d5..9e82fb5 100644
+--- a/user.h
++++ b/user.h
+@@ -1,5 +1,6 @@
+ struct stat;
+ struct rtcdate;
++struct segdesc;
+ 
+ // system calls
+ int fork(void);
+@@ -23,6 +24,7 @@ int getpid(void);
+ char* sbrk(int);
+ int sleep(int);
+ int uptime(void);
++int user(struct segdesc*);
+ 
+ // ulib.c
+ int stat(char*, struct stat*);
+diff --git a/usys.S b/usys.S
+index 8bfd8a1..0cb192a 100644
+--- a/usys.S
++++ b/usys.S
+@@ -29,3 +29,4 @@ SYSCALL(getpid)
+ SYSCALL(sbrk)
+ SYSCALL(sleep)
+ SYSCALL(uptime)
++SYSCALL(user)
